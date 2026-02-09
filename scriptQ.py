@@ -11,8 +11,8 @@ import seaborn as sns
 # ---------------------------
 try:
     num_sequences = int(input("Please enter the desired number of sequences (20–30): "))
-    length = int(input("Please enter the desired length of each sequence (1–6 recommended): "))
-    if num_sequences < 20 or num_sequences > 30 or length < 1 or length > 6:
+    length = int(input("Please enter the desired length of each sequence (1–10): "))
+    if num_sequences < 20 or num_sequences > 30 or length < 1 or length > 10:
         raise ValueError
 except ValueError:
     print("Invalid input — using default values: 20 sequences of length 4.")
