@@ -1,116 +1,156 @@
 import numpy as np
 import random
+from math import log2, ceil, pi
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# 1. Generate sequences
 try:
-    num_sequences = int(input("Please enter the desired number of sequences (between 20 to 30): "))
-    length = int(input("Please enter the desired length of each sequence (between 1 and 10): "))
-    
-    if num_sequences > 30 or num_sequences < 20 or length < 1 or length > 10:
-        raise ValueError("Liczby muszą być dodatnie, a sekwencje co najmniej dwie.")
-except ValueError as e:
-    print(f"Błąd wejścia: {e}. Używam wartości domyślnych: 20 sekwencji o długości 5.")
+    num_sequences = int(input("Please enter the desired number of sequences (between 20–30): "))
+    length = int(input("Please enter the desired length of each sequence (between 1–10): "))
+    if num_sequences < 20 or num_sequences > 30 or length < 1 or length > 10:
+        raise ValueError
+except ValueError:
+    print("Invalid input — using default values: 20 sequences of length 4.")
     num_sequences = 20
-    length = 5
+    length = 4
 
+sequences = [
+    ''.join(random.choice(['A', 'C', 'G', 'T']) for _ in range(length))
+    for _ in range(num_sequences)
+]
 
-sequences = [''.join(random.choice(['A', 'C', 'G', 'T']) for _ in range(length)) for _ in range(num_sequences)]
-print(f"\nWygenerowano {num_sequences} sekwencji o długości {length}.")
+print(f"\nGenerated {num_sequences} DNA sequences of length {length}.")
 
-def get_quantum_gate_for_dna(char):
-    """Mapowanie DNA na rotacje (Angle Encoding). 
-    Każda zasada to inny punkt na okręgu jednostkowym."""
-    mapping = {'A': 0, 'C': np.pi/2, 'G': np.pi, 'T': 3*np.pi/2}
-    return mapping[char]
+# 2. DNA -> Bloch angles
+def dna_to_angle(base):
+    mapping = {'A': 0.0,         # |0>
+               'C': pi/3,        # 60°
+               'G': 2*pi/3,      # 120°
+               'T': pi}          # |1>
+    return mapping[base]
 
-def quantum_swap_test(seq1, seq2, shots=1024):
+# 3. Quantum Hamming Distance using Swap Test
+def quantum_hamming(seq1, seq2, shots=2048):
+    assert len(seq1) == len(seq2)
     n = len(seq1)
-    # Rejestr: 1 ancilla + n qubitów dla seq1 + n qubitów dla seq2
-    qc = QuantumCircuit(2*n + 1, 1)
-    
-    # Kodowanie stanów (używamy bramki RY do ustawienia fazy/kąta)
-    for i in range(n):
-        qc.ry(get_quantum_gate_for_dna(seq1[i]), i + 1)
-        qc.ry(get_quantum_gate_for_dna(seq2[i]), i + 1 + n)
-    
-    # Protokół Swap Test
-    qc.h(0)
-    for i in range(n):
-        qc.cswap(0, i + 1, i + 1 + n)
-    qc.h(0)
-    
-    qc.measure(0, 0)
-    
-    # Wykonanie
+
+    idx_qubits = ceil(log2(n))
+    ancilla = 0
+    idx_start = 1
+    data_start = 1 + idx_qubits
+
+    # total qubits: 1 ancilla + idx_qubits + 1 data qubit (we use single qubit per swap test)
+    total_qubits = 1 + idx_qubits + 1
+    qc = QuantumCircuit(total_qubits, 1)
+
+    # Prepare uniform superposition over indices |i>
+    for q in range(idx_qubits):
+        qc.h(idx_start + q)
+
+    # Encode sequence 1 → |x>
+    for i, base in enumerate(seq1):
+        ctrl_bits = format(i, f'0{idx_qubits}b')
+        theta = dna_to_angle(base)
+
+        # Apply X gates for control encoding
+        for q, bit in enumerate(ctrl_bits):
+            if bit == '0':
+                qc.x(idx_start + q)
+
+        # Multi-controlled Ry on data qubit
+        qc.mcry(theta, [idx_start + q for q in range(idx_qubits)], data_start, mode='noancilla')
+
+        # Reset X gates
+        for q, bit in enumerate(ctrl_bits):
+            if bit == '0':
+                qc.x(idx_start + q)
+
+    qc.barrier()
+
+    # Swap test
+    qc.h(ancilla)
+
+    # Encode sequence 2 → |y> (controlled by ancilla)
+    for i, base in enumerate(seq2):
+        ctrl_bits = format(i, f'0{idx_qubits}b')
+        theta = dna_to_angle(base)
+
+        # Apply X gates for control encoding
+        for q, bit in enumerate(ctrl_bits):
+            if bit == '0':
+                qc.x(idx_start + q)
+
+        # Multi-controlled Ry on data qubit with ancilla as additional control
+        qc.mcry(theta, [ancilla] + [idx_start + q for q in range(idx_qubits)], data_start, mode='noancilla')
+
+        # Reset X gates
+        for q, bit in enumerate(ctrl_bits):
+            if bit == '0':
+                qc.x(idx_start + q)
+
+    qc.h(ancilla)
+    qc.measure(ancilla, 0)
+
+    # Simulation
     sim = AerSimulator()
-    t_qc = transpile(qc, sim)
-    counts = sim.run(t_qc, shots=shots).result().get_counts()
-    
+    tqc = transpile(qc, sim)
+    result = sim.run(tqc, shots=shots).result()
+    counts = result.get_counts()
+
     p0 = counts.get('0', 0) / shots
-    # Wartość fidelity (podobieństwa)
-    fidelity = max(0, 2*p0 - 1)
-    return 1 - fidelity # Zwracamy dystans
+    overlap = max(0.0, 2 * p0 - 1)
 
-# 2. Obliczanie macierzy (dla 25 sekwencji to 300 unikalnych par)
-D_quantum = np.zeros((num_sequences, num_sequences))
+    # Normalized Hamming distance estimate
+    return 1 - overlap
+
+# 4. Distance matrices
 D_classical = np.zeros((num_sequences, num_sequences))
-
-print(f"Obliczam dystanse dla {num_sequences} sekwencji...")
+D_quantum = np.zeros((num_sequences, num_sequences))
 
 for i in range(num_sequences):
     for j in range(i + 1, num_sequences):
-        # Kwantowo
-        q_dist = quantum_swap_test(sequences[i], sequences[j])
-        D_quantum[i][j] = D_quantum[j][i] = q_dist
-        
-        # Klasycznie (Hamming znormalizowany do zakresu 0-1)
+        # Classical normalized Hamming distance
         c_dist = sum(a != b for a, b in zip(sequences[i], sequences[j])) / length
-        D_classical[i][j] = D_classical[j][i] = c_dist
+        D_classical[i, j] = D_classical[j, i] = c_dist
 
-print("Gotowe!")
+        # Quantum distance (swap test with Bloch angles)
+        q_dist = quantum_hamming(sequences[i], sequences[j])
+        D_quantum[i, j] = D_quantum[j, i] = q_dist
+
+# 5. Visualization
 fig, ax = plt.subplots(1, 2, figsize=(16, 6))
 
-# Mapa dla dystansu klasycznego
-sns.heatmap(D_classical, ax=ax[0], cmap="YlGnBu", annot=False)
-ax[0].set_title("Klasyczna Odległość Hamminga")
-ax[0].set_xlabel("Indeks sekwencji")
-ax[0].set_ylabel("Indeks sekwencji")
+sns.heatmap(D_classical, ax=ax[0], cmap="YlGnBu")
+ax[0].set_title("Classical Hamming Distance (Normalized)")
 
-# Mapa dla estymacji kwantowej
-sns.heatmap(D_quantum, ax=ax[1], cmap="YlGnBu", annot=False)
-ax[1].set_title("Kwantowa Estymacja Odległości (Swap Test)")
-ax[1].set_xlabel("Indeks sekwencji")
+sns.heatmap(D_quantum, ax=ax[1], cmap="YlGnBu")
+ax[1].set_title("Quantum Hamming Distance (Bloch Angles Swap Test)")
 
 plt.tight_layout()
 plt.show()
 
-# 2. Analiza błędu i korelacja
+# 6. Error analysis
 correlation = np.corrcoef(D_classical.flatten(), D_quantum.flatten())[0, 1]
 mean_error = np.mean(np.abs(D_classical - D_quantum))
 
-print(f"\n--- ANALIZA PROJEKTU ---")
-print(f"Korelacja między metodami: {correlation:.4f}")
-print(f"Średni błąd estymacji: {mean_error:.4f}")
+print("\n PROJECT ANALYSIS ")
+print(f"Correlation (classical vs quantum): {correlation:.4f}")
+print(f"Mean absolute error: {mean_error:.4f}")
 
-# Wyświetlenie przykładowych porównań
-print("\nPrzykładowe porównania (Klasyczne vs Kwantowe):")
+print("\nSample comparisons:")
 for _ in range(3):
-    i, j = random.randint(0, num_sequences-1), random.randint(0, num_sequences-1)
-    print(f"Para ({i}, {j}): Klasycznie = {D_classical[i,j]:.2f}, Kwantowo = {D_quantum[i,j]:.2f}")
+    i, j = random.sample(range(num_sequences), 2)
+    print(
+        f"Pair ({i},{j}) → "
+        f"Classical: {D_classical[i,j]:.2f}, "
+        f"Quantum: {D_quantum[i,j]:.2f}"
+    )
 
-# Ustawienie precyzji wypisywania
-np.set_printoptions(precision=2, suppress=True)
-
-print("\n=== PORÓWNANIE NUMERYCZNE (Fragment 5x5) ===")
-print("\nKLASYCZNY HAMMING (Znormalizowany):")
-print(D_classical[:5, :5])
-
-print("\nKWANTOWY DYSTANS (Swap Test):")
-print(D_quantum[:5, :5])
-
-# Obliczenie statystyk
-diff = D_quantum - D_classical
-print(f"\nŚrednia różnica między metodami: {np.mean(diff):.4f}")
+print("\n 5x5 MATRIX FRAGMENT ")
+print("Classical:")
+print(np.round(D_classical[:5, :5], 2))
+print("\nQuantum:")
+print(np.round(D_quantum[:5, :5], 2))
