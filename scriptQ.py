@@ -6,9 +6,7 @@ from qiskit_aer import AerSimulator
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ---------------------------
 # 1. Generate sequences
-# ---------------------------
 try:
     num_sequences = int(input("Please enter the desired number of sequences (20–30): "))
     length = int(input("Please enter the desired length of each sequence (1–10): "))
@@ -26,16 +24,13 @@ sequences = [
 
 print(f"\nGenerated {num_sequences} DNA sequences of length {length}.")
 
-# ---------------------------
-# 2. DNA → bits
-# ---------------------------
+# 2. DNA -> bits
 def dna_to_bits(base):
     mapping = {'A': '00', 'C': '01', 'G': '10', 'T': '11'}
     return mapping[base]
 
-# ---------------------------
 # 3. Quantum Hamming Distance (Swap Test)
-# ---------------------------
+
 def quantum_hamming(seq1, seq2, shots=2048):
     assert len(seq1) == len(seq2)
     n = len(seq1)
@@ -112,9 +107,9 @@ def quantum_hamming(seq1, seq2, shots=2048):
     # Normalized Hamming distance estimate
     return 1 - overlap
 
-# ---------------------------
+
 # 4. Distance matrices
-# ---------------------------
+
 D_classical = np.zeros((num_sequences, num_sequences))
 D_quantum = np.zeros((num_sequences, num_sequences))
 
@@ -132,9 +127,9 @@ for i in range(num_sequences):
 
 print("Done.")
 
-# ---------------------------
+
 # 5. Visualization
-# ---------------------------
+
 fig, ax = plt.subplots(1, 2, figsize=(16, 6))
 
 sns.heatmap(D_classical, ax=ax[0], cmap="YlGnBu")
@@ -146,9 +141,9 @@ ax[1].set_title("Quantum Hamming Distance (Swap Test)")
 plt.tight_layout()
 plt.show()
 
-# ---------------------------
+
 # 6. Error analysis
-# ---------------------------
+
 correlation = np.corrcoef(D_classical.flatten(), D_quantum.flatten())[0, 1]
 mean_error = np.mean(np.abs(D_classical - D_quantum))
 
