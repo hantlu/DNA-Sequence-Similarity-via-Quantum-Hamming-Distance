@@ -8,8 +8,8 @@ import seaborn as sns
 
 # 1. Generate sequences
 try:
-    num_sequences = int(input("Please enter the desired number of sequences (20–30): "))
-    length = int(input("Please enter the desired length of each sequence (1–10): "))
+    num_sequences = int(input("Please enter the desired number of sequences (between 20–30): "))
+    length = int(input("Please enter the desired length of each sequence (between 1–10): "))
     if num_sequences < 20 or num_sequences > 30 or length < 1 or length > 10:
         raise ValueError
 except ValueError:
@@ -113,8 +113,6 @@ def quantum_hamming(seq1, seq2, shots=2048):
 D_classical = np.zeros((num_sequences, num_sequences))
 D_quantum = np.zeros((num_sequences, num_sequences))
 
-print("Computing distance matrices...")
-
 for i in range(num_sequences):
     for j in range(i + 1, num_sequences):
         # Classical normalized Hamming distance
@@ -124,8 +122,6 @@ for i in range(num_sequences):
         # Quantum distance (swap test)
         q_dist = quantum_hamming(sequences[i], sequences[j])
         D_quantum[i, j] = D_quantum[j, i] = q_dist
-
-print("Done.")
 
 
 # 5. Visualization
@@ -147,7 +143,7 @@ plt.show()
 correlation = np.corrcoef(D_classical.flatten(), D_quantum.flatten())[0, 1]
 mean_error = np.mean(np.abs(D_classical - D_quantum))
 
-print("\n--- PROJECT ANALYSIS ---")
+print("\n PROJECT ANALYSIS ")
 print(f"Correlation (classical vs quantum): {correlation:.4f}")
 print(f"Mean absolute error: {mean_error:.4f}")
 
@@ -160,7 +156,7 @@ for _ in range(3):
         f"Quantum: {D_quantum[i,j]:.2f}"
     )
 
-print("\n=== 5x5 MATRIX FRAGMENT ===")
+print("\n 5x5 MATRIX FRAGMENT ")
 print("Classical:")
 print(np.round(D_classical[:5, :5], 2))
 print("\nQuantum:")
